@@ -236,7 +236,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   undoSeconds: LIMITS.UNDO_SECONDS_DEFAULT,
   excludedDomains: [],
   onboardedAt: 0,
-  hostPermissionAsked: false
+  hostPermissionAsked: false,
+  hostPermissionAvailable: false
 });
 
 export function mergeSettings(raw) {
@@ -250,6 +251,7 @@ export function mergeSettings(raw) {
   }
   if (Number.isFinite(raw.onboardedAt)) out.onboardedAt = raw.onboardedAt;
   if (typeof raw.hostPermissionAsked === "boolean") out.hostPermissionAsked = raw.hostPermissionAsked;
+  if (typeof raw.hostPermissionAvailable === "boolean") out.hostPermissionAvailable = raw.hostPermissionAvailable;
   return out;
 }
 

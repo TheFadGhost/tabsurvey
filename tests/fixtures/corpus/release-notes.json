@@ -1,0 +1,8 @@
+{
+  "id": "release-notes",
+  "kind": "release",
+  "title": "Tabsurvey 2.4 Release Notes",
+  "headings": ["Highlights", "Fix list"],
+  "text": "Version 2.4 focuses on bulk actions and raw speed for people who hoard tabs. The update ships today for every supported browser.\n\nAdded: bulk actions for closing duplicate tabs.\n\nAdded: bulk group restore from the sessions page.\n\nChanged: search now scans page text and returns results three times faster.\n\nFixed: a memory leak that grew during long idle hours.\n\nFixed: duplicated counters in the status bar.\n\nUpgrade notes: settings migrate automatically and no restart is required. Rollback stays possible through the previous release channel.",
+  "reference": "Version 2.4 brings bulk tab actions, three times faster search, and a memory leak fix."
+}

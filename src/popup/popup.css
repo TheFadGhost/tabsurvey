@@ -1,0 +1,138 @@
+.brand-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.icon-btn {
+  width: 24px;
+  padding-inline: 0;
+}
+
+.icon-btn svg {
+  display: block;
+  margin: auto;
+}
+
+.search-row {
+  flex: none;
+  padding: 6px 12px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.filters {
+  flex: none;
+  min-height: 32px;
+  padding-block: 5px;
+  padding-inline: 12px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+
+.filters::-webkit-scrollbar {
+  display: none;
+}
+
+.popup-list .row {
+  min-height: 44px;
+}
+
+.popup-list .row__title {
+  font-weight: 600;
+}
+
+.popup-list .row__status {
+  align-self: start;
+}
+
+.empty-note {
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.empty-note .hint {
+  color: var(--faint);
+}
+
+.popup-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding-inline: 12px;
+  background: var(--raised);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.footer-spacer {
+  flex: 1;
+}
+
+.settings-panel {
+  position: absolute;
+  inset-block: 44px 28px;
+  inset-inline: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--bg);
+  border-top: 1px solid var(--border-strong);
+  font-size: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field > label,
+.field > legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.radio-row {
+  display: flex;
+  gap: 12px;
+}
+
+.radio-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.field.grow {
+  flex: 1;
+}
+
+.field.grow textarea.input {
+  flex: 1;
+  min-height: 84px;
+}
+
+.settings-panel .btn {
+  align-self: flex-start;
+}

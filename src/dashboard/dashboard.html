@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabsurvey</title>
+<script>
+(function () {
+  var theme = null;
+  try {
+    theme = localStorage.getItem("tabsurvey.themeMirror");
+  } catch (e) {}
+  if (theme !== "light" && theme !== "dark" && theme !== "high-contrast") {
+    try {
+      theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    } catch (e) {
+      theme = "light";
+    }
+  }
+  document.documentElement.setAttribute("data-theme", theme);
+})();
+</script>
+<link rel="stylesheet" href="../shared/themes.css">
+<link rel="stylesheet" href="../shared/components.css">
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+<header class="dash-header">
+  <span class="dash-brand"><span class="dash-name">Tabsurvey</span><span id="tab-count" class="badge">0</span></span>
+  <div class="header-search">
+    <label class="visually-hidden" for="search-input">Search tabs</label>
+    <input id="search-input" class="input" type="search" placeholder="Search titles, URLs, tags, summaries" autocomplete="off" spellcheck="false">
+  </div>
+  <label class="visually-hidden" for="sort-select">Sort tabs</label>
+  <select id="sort-select" class="input sort-select">
+    <option value="recent">Recent</option>
+    <option value="title">Title</option>
+    <option value="domain">Domain</option>
+    <option value="window">Window</option>
+  </select>
+  <div class="header-actions">
+    <button id="extract-btn" class="btn btn--primary btn--small" type="button">Extract unread</button>
+    <div class="menu-wrap">
+      <button id="group-menu-button" class="btn btn--ghost btn--small" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="group-menu">Group by ▾</button>
+      <div id="group-menu" class="menu" hidden>
+        <button type="button" class="menu__item js-group-by" data-by="category">Category</button>
+        <button type="button" class="menu__item js-group-by" data-by="domain">Domain</button>
+        <button type="button" class="menu__item js-group-by" data-by="window">Window</button>
+      </div>
+    </div>
+    <button id="close-dups-btn" class="btn btn--ghost btn--small" type="button">Close duplicates</button>
+    <button id="save-session-focus" class="btn btn--ghost btn--small" type="button">Save session</button>
+    <button id="export-md-btn" class="btn btn--ghost btn--small" type="button">Export MD</button>
+    <button id="import-sessions-btn" class="btn btn--ghost btn--small" type="button">Import</button>
+    <button id="export-sessions-btn" class="btn btn--ghost btn--small" type="button">Export sessions</button>
+    <button id="settings-toggle" class="btn btn--ghost btn--small" type="button" aria-expanded="false" aria-controls="settings-panel">Settings</button>
+    <button id="help-btn" class="btn btn--ghost btn--small" type="button" title="Keyboard shortcuts (?)" aria-haspopup="dialog">?</button>
+    <button id="sidebar-toggle" class="btn btn--ghost btn--small sidebar-toggle" type="button" aria-expanded="false" aria-controls="sidebar">Filters</button>
+  </div>
+</header>
+<div class="dash-body">
+  <aside id="sidebar" class="sidebar" aria-label="Filters, sessions and settings"></aside>
+  <main id="main" class="main">
+    <div id="banner-region" class="banner-row"></div>
+    <div id="onboarding-region"></div>
+    <div id="bulk-region"></div>
+    <ol id="tab-list" class="tab-list" role="list"></ol>
+    <p id="empty-note" class="empty-note" hidden></p>
+  </main>
+</div>
+<div id="toast-region" class="toast-region" aria-live="polite"></div>
+<div id="help-overlay" class="help-overlay" hidden>
+  <div class="card help-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <h2 id="help-title">Keyboard shortcuts</h2>
+    <dl class="shortcut-list">
+      <dt><kbd>/</kbd></dt><dd>Focus search</dd>
+      <dt><kbd>j</kbd> / <kbd>↓</kbd></dt><dd>Next tab</dd>
+      <dt><kbd>k</kbd> / <kbd>↑</kbd></dt><dd>Previous tab</dd>
+      <dt><kbd>Enter</kbd></dt><dd>Open (focus) tab</dd>
+      <dt><kbd>x</kbd></dt><dd>Select / deselect tab</dd>
+      <dt><kbd>d</kbd></dt><dd>Toggle duplicates filter</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Clear selection, close dialogs</dd>
+      <dt><kbd>?</kbd></dt><dd>This help</dd>
+    </dl>
+    <button id="help-close" class="btn btn--primary btn--small" type="button">Close</button>
+  </div>
+</div>
+<input type="file" id="import-sessions-json" accept=".json,application/json" hidden>
+<input type="file" id="import-sessions-text" accept=".md,.markdown,.txt,text/plain,text/markdown" hidden>
+<p id="sr-live" class="visually-hidden" aria-live="polite"></p>
+<script type="module" src="./dashboard.js"></script>
+</body>
+</html>

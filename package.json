@@ -5,7 +5,7 @@
   "type": "module",
   "description": "On-device tab inventory with offline extractive summaries and rule-based tagging. Zero network requests.",
   "scripts": {
-    "test": "node --test tests/unit tests/integration",
+    "test": "node --test \"tests/unit/*.test.js\" \"tests/integration/*.test.js\"",
     "e2e": "node tests/e2e/run.mjs"
   },
   "devDependencies": {

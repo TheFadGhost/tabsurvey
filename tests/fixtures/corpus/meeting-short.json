@@ -1,0 +1,8 @@
+{
+  "id": "meeting-short",
+  "kind": "notes",
+  "title": "Weekly Sync Notes",
+  "headings": ["Agenda"],
+  "text": "The team reviewed the launch checklist and agreed the billing migration stays on track for the fifteenth, pending one final round of load testing on staging. Priya will draft the rollback plan by Thursday, Marco owns the customer email draft, and the docs refresh moves to next sprint because the legal review is still pending. Budget questions were deferred to finance, the offsite venue vote closes Friday at noon, and the next sync lands Monday morning with an extended demo slot for support.",
+  "reference": "The team confirmed the billing migration timeline, split follow-up owners for rollback and email drafts, and deferred budget questions."
+}
