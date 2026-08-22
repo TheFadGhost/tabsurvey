@@ -1,0 +1,14 @@
+{
+  "name": "tabsurvey",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "On-device tab inventory with offline extractive summaries and rule-based tagging. Zero network requests.",
+  "scripts": {
+    "test": "node --test tests/unit tests/integration",
+    "e2e": "node tests/e2e/run.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Tabsurvey",
+  "version": "0.1.0",
+  "description": "See what your open tabs actually are: on-device summaries, tags and duplicate detection. No network requests, ever.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Tabsurvey",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background/serviceWorker.js",
+    "type": "module"
+  },
+  "permissions": ["tabs", "tabGroups", "storage", "alarms", "scripting", "favicon"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "omnibox": {
+    "keyword": "ts"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+T" },
+      "description": "Open the Tabsurvey popup"
+    },
+    "open-dashboard": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Open the Tabsurvey dashboard"
+    }
+  }
+}
