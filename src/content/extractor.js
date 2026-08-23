@@ -286,7 +286,7 @@
     };
   }
 
-  const api = { classifySkip, extractFromDom };
+  const api = { classifySkip, extractFromDom, INTERNAL_SCHEMES };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

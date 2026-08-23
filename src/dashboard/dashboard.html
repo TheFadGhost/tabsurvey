@@ -41,7 +41,7 @@
   <div class="header-actions">
     <button id="extract-btn" class="btn btn--primary btn--small" type="button">Extract unread</button>
     <div class="menu-wrap">
-      <button id="group-menu-button" class="btn btn--ghost btn--small" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="group-menu">Group by ▾</button>
+      <button id="group-menu-button" class="btn btn--ghost btn--small" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="group-menu">Group by <span aria-hidden="true">▾</span></button>
       <div id="group-menu" class="menu" hidden>
         <button type="button" class="menu__item js-group-by" data-by="category">Category</button>
         <button type="button" class="menu__item js-group-by" data-by="domain">Domain</button>
@@ -74,8 +74,8 @@
     <h2 id="help-title">Keyboard shortcuts</h2>
     <dl class="shortcut-list">
       <dt><kbd>/</kbd></dt><dd>Focus search</dd>
-      <dt><kbd>j</kbd> / <kbd>↓</kbd></dt><dd>Next tab</dd>
-      <dt><kbd>k</kbd> / <kbd>↑</kbd></dt><dd>Previous tab</dd>
+      <dt><kbd>j</kbd> / <kbd>â†“</kbd></dt><dd>Next tab</dd>
+      <dt><kbd>k</kbd> / <kbd>â†‘</kbd></dt><dd>Previous tab</dd>
       <dt><kbd>Enter</kbd></dt><dd>Open (focus) tab</dd>
       <dt><kbd>x</kbd></dt><dd>Select / deselect tab</dd>
       <dt><kbd>d</kbd></dt><dd>Toggle duplicates filter</dd>
@@ -85,8 +85,7 @@
     <button id="help-close" class="btn btn--primary btn--small" type="button">Close</button>
   </div>
 </div>
-<input type="file" id="import-sessions-json" accept=".json,application/json" hidden>
-<input type="file" id="import-sessions-text" accept=".md,.markdown,.txt,text/plain,text/markdown" hidden>
+ <input type="file" id="import-sessions-json" accept=".json,application/json" hidden>
 <p id="sr-live" class="visually-hidden" aria-live="polite"></p>
 <script type="module" src="./dashboard.js"></script>
 </body>

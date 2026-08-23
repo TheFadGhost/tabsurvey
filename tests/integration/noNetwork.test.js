@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
@@ -6,7 +6,6 @@ import path from "node:path";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const SRC_DIR = path.join(ROOT, "src");
 const MANIFEST_PATH = path.join(ROOT, "manifest.json");
-const E2E_DIR = path.join(ROOT, "tests", "e2e");
 
 const BINARY_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".woff", ".woff2"]);
 
@@ -33,12 +32,15 @@ const CALL_PATTERNS = [
   ["WebSocket", /\bWebSocket\b/],
   ["EventSource", /\bEventSource\b/],
   ["sendBeacon", /\bsendBeacon\b/],
-  ["importScripts", /\bimportScripts\b/]
+  ["importScripts", /\bimportScripts\b/],
+  ["new Image()", /\bnew\s+Image\s*\(/],
+  ["location navigation", /\blocation\.(href|assign|replace)\s*[=(]/],
+  ["protocol-relative URL", /["'`]\/\/[a-z0-9][a-z0-9.-]+\.[a-z]{2,}/i]
 ];
 
 const URL_PATTERN = /https?:\/\/(?!w3\.org|www\.w3\.org)/i;
 
-test("no network APIs or remote URLs anywhere in src/, manifest.json, tests/e2e", () => {
+test("no network APIs or remote URLs anywhere in shipped code (src/, manifest.json)", () => {
   const violations = [];
   for (const file of collectFiles()) {
     const rel = path.relative(ROOT, file);

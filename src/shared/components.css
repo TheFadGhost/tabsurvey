@@ -131,6 +131,47 @@ button.chip {
   font-weight: 700;
 }
 
+.chip--removable {
+  padding-inline-end: 4px;
+}
+
+.chip__remove {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  inline-size: 14px;
+  block-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-full);
+  cursor: pointer;
+  padding: 0;
+}
+
+.chip__remove:hover {
+  color: var(--danger);
+  background: var(--inset);
+}
+
+.chip--add {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.chip--add:hover {
+  color: var(--fg);
+}
+
+.input--tag-inline {
+  height: 22px;
+  inline-size: 110px;
+  font-size: 11px;
+  padding-inline: 8px;
+}
+
 .chip__dot {
   width: 10px;
   height: 10px;
@@ -199,7 +240,7 @@ button.chip {
   border-radius: 4px;
   overflow: hidden;
   background: var(--dot-1);
-  color: var(--accent-contrast);
+  color: var(--fg);
   font-size: 9px;
   font-weight: 700;
   line-height: 1;
@@ -295,6 +336,8 @@ button.chip {
 .badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 2ch;
   height: 18px;
   padding-inline: 7px;
   border: 1px solid var(--border);
@@ -303,6 +346,7 @@ button.chip {
   color: var(--muted);
   font-size: 11px;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .banner {

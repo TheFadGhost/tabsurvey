@@ -1,4 +1,4 @@
-﻿export class FakeEvent {
+export class FakeEvent {
   constructor() {
     this.listeners = [];
   }
@@ -137,6 +137,12 @@ export function makeFakeChrome(opts = {}) {
       }
     }
     return arr.map((t) => ({ ...t }));
+  }
+
+  async function get(id) {
+    const tab = tabsMap.get(id);
+    if (!tab) throw new Error(`No tab with id: ${id}`);
+    return { ...tab };
   }
 
   async function update(id, props) {
@@ -315,6 +321,7 @@ export function makeFakeChrome(opts = {}) {
     onMessage: new FakeEvent(),
     onInstalled: new FakeEvent(),
     onStartup: new FakeEvent(),
+    onSuspend: new FakeEvent(),
     sendMessage: async (msg) => {
       if (msg && typeof msg === "object" && typeof msg.tabId === "number") return sendMessage(msg.tabId, msg);
       return undefined;
@@ -338,6 +345,7 @@ export function makeFakeChrome(opts = {}) {
       onReplaced: evReplaced,
       onActivated: evActivated,
       query,
+      get,
       get: getTabById,
       update,
       remove,
@@ -386,7 +394,8 @@ export function makeFakeChrome(opts = {}) {
       request: async () => {
         state.hostGranted = true;
         return true;
-      }
+      },
+      onRemoved: new FakeEvent()
     },
     commands: {
       onCommand: new FakeEvent()

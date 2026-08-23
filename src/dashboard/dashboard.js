@@ -67,8 +67,7 @@ function boot() {
     toastRegion: $("toast-region"),
     helpOverlay: $("help-overlay"),
     helpClose: $("help-close"),
-    importJsonInput: $("import-sessions-json"),
-    importTextInput: $("import-sessions-text")
+    importJsonInput: $("import-sessions-json")
   };
 
   const store = createStore();
@@ -232,6 +231,17 @@ function boot() {
     onFocusTab(id) {
       message(MSG.FOCUS_TAB, { tabId: id }).catch(() => {});
     },
+    onCorrectTag({ op, label, tabId }) {
+      message(MSG.CORRECT_TAGS, { tabId: Number(tabId), op, label })
+        .then((res) => {
+          if (res && res.ok === false) {
+            toast("Could not update tags", "error");
+            return;
+          }
+          toast(op === "add" ? `Tag "${label}" added` : `Tag "${label}" removed — future suggestions learned`);
+        })
+        .catch(() => toast("Could not update tags", "error"));
+    },
     closeSelected() {
       actions.closeWithUndo(selectedIds());
     },
@@ -349,6 +359,7 @@ function boot() {
       state.filters.states.size > 0 ||
       state.filters.windowIds.size > 0;
     if (query.length > 0) {
+      note.dir = "auto";
       note.textContent = `No results for “${query}”.`;
       const reset = document.createElement("button");
       reset.type = "button";
@@ -358,6 +369,7 @@ function boot() {
       note.appendChild(document.createTextNode(" "));
       note.appendChild(reset);
     } else if (hasFilters) {
+      note.dir = "auto";
       note.textContent = "No open tabs match.";
       const reset = document.createElement("button");
       reset.type = "button";
@@ -367,7 +379,14 @@ function boot() {
       note.appendChild(document.createTextNode(" "));
       note.appendChild(reset);
     } else {
-      note.textContent = "No open tabs match. Open a few tabs and they will appear here.";
+      note.removeAttribute("dir");
+      const mainLine = document.createElement("span");
+      mainLine.textContent = "No open tabs match.";
+      const hint = document.createElement("span");
+      hint.className = "muted";
+      hint.textContent = " Open a few tabs and they will appear here.";
+      note.appendChild(mainLine);
+      note.appendChild(hint);
     }
   }
 
@@ -406,7 +425,8 @@ function boot() {
       selection: state.selection,
       hostGranted: Boolean(state.hostGranted),
       onToggleSelect: handlers.toggleSelected,
-      onFocusTab: handlers.onFocusTab
+      onFocusTab: handlers.onFocusTab,
+      onCorrectTag: handlers.onCorrectTag
     };
   }
 
@@ -501,10 +521,6 @@ function boot() {
     importFromFile(refs.importJsonInput.files && refs.importJsonInput.files[0]);
     refs.importJsonInput.value = "";
   });
-  refs.importTextInput.addEventListener("change", () => {
-    importFromFile(refs.importTextInput.files && refs.importTextInput.files[0]);
-    refs.importTextInput.value = "";
-  });
 
   refs.settingsToggle.addEventListener("click", () => {
     const opened = toggleSettingsPanel(refs.sidebar);
@@ -519,7 +535,23 @@ function boot() {
   refs.helpBtn.addEventListener("click", openHelp);
   refs.helpClose.addEventListener("click", closeHelp);
   refs.helpOverlay.addEventListener("click", (e) => {
-    if (e.target === refs.helpOverlay) refs.helpOverlay.hidden = true;
+    if (e.target === refs.helpOverlay) closeHelp();
+  });
+  refs.helpOverlay.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const focusable = refs.helpOverlay.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   });
 
   document.addEventListener("keydown", (e) => {
@@ -534,7 +566,7 @@ function boot() {
     if ((e.key === "?" || (e.shiftKey && e.key === "/")) && !typing) {
       e.preventDefault();
       if (refs.helpOverlay.hidden) openHelp();
-      else refs.helpOverlay.hidden = true;
+      else closeHelp();
       return;
     }
     if (e.key === "d" && !typing) {
@@ -545,11 +577,12 @@ function boot() {
     }
     if (e.key === "Escape") {
       if (!refs.helpOverlay.hidden) {
-        refs.helpOverlay.hidden = true;
+        closeHelp();
         return;
       }
       if (!refs.groupMenu.hidden) {
         closeGroupMenu();
+        refs.groupBtn.focus();
         return;
       }
       clearSelection();

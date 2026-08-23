@@ -1,7 +1,8 @@
-﻿import {
+import {
   LIMITS,
   STORAGE_KEYS,
   MSG,
+  URL_KIND,
   FAILURE_REASONS,
   mergeSettings,
   sanitizeText,
@@ -297,10 +298,29 @@ export function createController(api, deps = {}) {
       defaultsCorrections = emptyCorrections();
     }
     corrections = mergeCorrections(defaultsCorrections, data[STORAGE_KEYS.CORRECTIONS]);
-    pendingClose =
-      data[STORAGE_KEYS.PENDING_CLOSE] && typeof data[STORAGE_KEYS.PENDING_CLOSE] === "object"
-        ? data[STORAGE_KEYS.PENDING_CLOSE]
-        : {};
+    const rawPending = data[STORAGE_KEYS.PENDING_CLOSE];
+    const sanitizedPending = {};
+    if (rawPending && typeof rawPending === "object" && !Array.isArray(rawPending)) {
+      for (const [batchId, entry] of Object.entries(rawPending)) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+        if (typeof batchId !== "string" || batchId.length === 0 || batchId.length > 128) continue;
+        const tabIds = Array.isArray(entry.tabIds)
+          ? entry.tabIds.map(Number).filter((n) => Number.isInteger(n))
+          : null;
+        if (!tabIds || tabIds.length === 0) continue;
+        const deadlineAt = Number(entry.deadlineAt);
+        sanitizedPending[batchId] = {
+          batchId,
+          tabIds,
+          deadlineAt: Number.isFinite(deadlineAt) ? deadlineAt : now(),
+          snapshot:
+            entry.snapshot && typeof entry.snapshot === "object" && !Array.isArray(entry.snapshot)
+              ? entry.snapshot
+              : {}
+        };
+      }
+    }
+    pendingClose = sanitizedPending;
     await refreshHostPermission();
   }
 
@@ -443,7 +463,10 @@ export function createController(api, deps = {}) {
     try {
       if (!record) return;
       const live = await api.getTab(record.id).catch(() => null);
-      if (!live) return;
+      if (!live) {
+        record.extraction = { status: "failed", reason: FAILURE_REASONS.UNKNOWN };
+        return;
+      }
       extractAttempts.set(key, (extractAttempts.get(key) || 0) + 1);
       if (live.status === "loading") {
         record.extraction = null;
@@ -651,6 +674,18 @@ export function createController(api, deps = {}) {
     api.runtimeOnStartup(() => {
       void ensureHydrated().catch(() => {});
     });
+    try {
+      api.runtimeOnSuspend(() => {
+        persistTabsNow().catch(() => {});
+      });
+    } catch {}
+    try {
+      api.permissionsOnRemoved(() => {
+        hostGranted = false;
+        queue.length = 0;
+        void refreshHostPermission().catch(() => {});
+      });
+    } catch {}
   }
 
   function getStateMessage() {
@@ -924,6 +959,17 @@ export function createController(api, deps = {}) {
       }
       if (typeof message.type !== "string") return { ok: false, error: "unknown-message" };
       await ensureHydrated();
+      const numericIds = (value) =>
+        Array.isArray(value) ? value.map(Number).filter((n) => Number.isFinite(n)) : [];
+      message = { ...message };
+      if ("tabId" in message) {
+        const n = Number(message.tabId);
+        if (Number.isFinite(n)) message.tabId = n;
+      }
+      if ("tabIds" in message) message.tabIds = numericIds(message.tabIds);
+      if ("sessionId" in message && typeof message.sessionId !== "string") {
+        return { ok: false, error: "unknown-message" };
+      }
       switch (message.type) {
         case MSG.GET_STATE: {
           if (queue.length === 0 && extracting.size === 0) {
@@ -936,7 +982,16 @@ export function createController(api, deps = {}) {
         case MSG.REFRESH_INVENTORY:
           return await refreshInventory();
         case MSG.REQUEST_EXTRACT_ALL: {
+          await refreshHostPermission().catch(() => {});
           queue.length = 0;
+          for (const record of Object.values(tabsMap)) {
+            if (!record || record.kind !== URL_KIND.WEB) continue;
+            if (record.extraction && record.extraction.status === "failed") {
+              if (settings.excludedDomains.includes(record.domain)) continue;
+              record.extraction = null;
+              record.summary = null;
+            }
+          }
           const queued = enqueueEligible("request-extract-all");
           return { ok: true, queued };
         }

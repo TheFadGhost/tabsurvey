@@ -1,6 +1,6 @@
 import { LIMITS } from "../lib/schema.js";
 import { search } from "../lib/searchIndex.js";
-import { truncateMiddle, faviconEl, stateGlyphs, announce } from "../shared/uiCommon.js";
+import { truncateMiddle, faviconEl, stateGlyphs, announce, rowAriaLabel as sharedRowAriaLabel } from "../shared/uiCommon.js";
 
 const FAILURE_PHRASES = {
   pdf: "Skipped: PDF",
@@ -8,12 +8,12 @@ const FAILURE_PHRASES = {
   file: "File page",
   "no-host-permission": "No host permission granted",
   "excluded-domain": "Skipped: excluded domain",
-  "too-little-text": "Extraction failed — page unreadable",
+  "too-little-text": "Extraction failed â€” page unreadable",
   "image-only": "Image-only page",
-  "paywall-stub": "Paywall stub — no article text",
+  "paywall-stub": "Paywall stub â€” no article text",
   timeout: "Page did not respond",
-  "injection-failed": "Extraction failed",
-  unknown: "Extraction failed"
+  "injection-failed": "Extraction failed — page unreadable",
+  unknown: "Extraction failed — page unreadable"
 };
 
 const KIND_PHRASES = { pdf: FAILURE_PHRASES.pdf, internal: FAILURE_PHRASES.internal, file: FAILURE_PHRASES.file };
@@ -99,7 +99,7 @@ function summaryView(record, hostGranted) {
   if (!hostGranted) {
     return { mode: "failed", text: FAILURE_PHRASES["no-host-permission"], low: false };
   }
-  return { mode: "pending", text: "Reading page…", low: false };
+  return { mode: "pending", text: "Reading pageâ€¦", low: false };
 }
 
 function tagHue(label) {
@@ -140,18 +140,7 @@ function checkbox(checked, ariaLabel) {
 }
 
 export function rowAriaLabel(record) {
-  const title = record.title || record.url || "(untitled)";
-  const domain = record.domain || record.kind || "";
-  const tags =
-    Array.isArray(record.tags) && record.tags.length > 0
-      ? `, tags ${record.tags
-          .map((t) => t && t.label)
-          .filter(Boolean)
-          .join(", ")}`
-      : "";
-  return `${title}, ${domain}${tags}${record.audible ? ", audible" : ""}${record.discarded ? ", discarded" : ""}${
-    record.duplicateOf != null ? ", duplicate" : ""
-  }`;
+  return sharedRowAriaLabel({ ...record, unreadable: isUnreadable(record) });
 }
 
 export function renderRow(record, ctx) {
@@ -206,7 +195,7 @@ export function renderRow(record, ctx) {
   const tags = Array.isArray(record.tags) ? record.tags.filter((t) => t && t.label) : [];
   const shown = tags.slice(0, 3);
   for (const tag of shown) {
-    const chip = elSpan("chip");
+    const chip = elSpan("chip chip--removable");
     chip.title = tag.reason || tag.label;
     const dot = elSpan("chip__dot");
     dot.style.backgroundColor = `var(--dot-${tagHue(tag.label)})`;
@@ -214,6 +203,15 @@ export function renderRow(record, ctx) {
     const labelNode = elSpan(null, tag.label);
     labelNode.dir = "auto";
     chip.appendChild(labelNode);
+    if (typeof ctx.onCorrectTag === "function") {
+      const removeBtn = elButton("chip__remove", "Ã—", `Remove tag ${tag.label}`);
+      removeBtn.setAttribute("aria-label", `Remove tag ${tag.label} from this tab`);
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        ctx.onCorrectTag({ op: "remove", label: tag.label, tabId: record.id });
+      });
+      chip.appendChild(removeBtn);
+    }
     tagsEl.appendChild(chip);
   }
   if (tags.length > shown.length) {
@@ -224,6 +222,59 @@ export function renderRow(record, ctx) {
       .map((t) => t.label)
       .join(", ")}`;
     tagsEl.appendChild(overflow);
+  }
+  if (typeof ctx.onCorrectTag === "function") {
+    const addChip = elButton("chip chip--add", "+ tag", "Add a tag to this tab");
+    addChip.setAttribute("aria-label", `Add a tag to ${title}`);
+    let inlineInput = null;
+    addChip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (inlineInput) {
+        inlineInput.focus();
+        return;
+      }
+      inlineInput = document.createElement("input");
+      inlineInput.type = "text";
+      inlineInput.className = "input input--tag-inline";
+      inlineInput.setAttribute("aria-label", "New tag name");
+      inlineInput.placeholder = "tag name";
+      tagsEl.insertBefore(inlineInput, addChip);
+      inlineInput.focus();
+      const submit = () => {
+        const value = String(inlineInput.value || "").trim();
+        const inputRef = inlineInput;
+        inlineInput = null;
+        inputRef.remove();
+        if (value) ctx.onCorrectTag({ op: "add", label: value, tabId: record.id });
+        addChip.hidden = false;
+      };
+      inlineInput.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          ev.stopPropagation();
+          submit();
+        } else if (ev.key === "Escape") {
+          ev.stopPropagation();
+          const inputRef2 = inlineInput;
+          inlineInput = null;
+          if (inputRef2) inputRef2.remove();
+          addChip.hidden = false;
+          addChip.focus();
+        }
+      });
+      inlineInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (inlineInput && inlineInput.value.trim() === "") {
+            const inputRef3 = inlineInput;
+            inlineInput = null;
+            inputRef3.remove();
+            addChip.hidden = false;
+          }
+        }, 120);
+      });
+      addChip.hidden = true;
+    });
+    tagsEl.appendChild(addChip);
   }
   li.appendChild(tagsEl);
 
@@ -317,15 +368,28 @@ export function renderList(listEl, state, ctx) {
       hostGranted: state.hostGranted,
       getURL: ctx.getURL,
       onToggleSelect: ctx.onToggleSelect,
-      onFocusTab: ctx.onFocusTab
+      onFocusTab: ctx.onFocusTab,
+      onCorrectTag: ctx.onCorrectTag
     });
     row.tabIndex = index === activeRowIndex ? 0 : -1;
     fragment.appendChild(row);
   });
   listEl.appendChild(fragment);
-  announce(`${records.length} tabs shown`);
+  const filterKey = JSON.stringify([
+    state.filters.query,
+    [...state.filters.categories].sort(),
+    [...state.filters.states].sort(),
+    [...state.filters.windowIds].sort(),
+    state.filters.sort
+  ]);
+  if (filterKey !== lastAnnouncedFilterKey) {
+    lastAnnouncedFilterKey = filterKey;
+    announce(`${records.length} tab${records.length === 1 ? "" : "s"} shown`);
+  }
   return records;
 }
+
+let lastAnnouncedFilterKey = "";
 
 export function renderBulkToolbar(container, state, handlers) {
   while (container.firstChild) container.removeChild(container.firstChild);
@@ -341,7 +405,7 @@ export function renderBulkToolbar(container, state, handlers) {
   discardBtn.addEventListener("click", handlers.discardSelected);
   container.appendChild(discardBtn);
   const menuWrap = elDiv("menu-wrap");
-  const groupBtn = elButton("btn btn--ghost btn--small", "Group selected ▾");
+  const groupBtn = elButton("btn btn--ghost btn--small", "Group selected â–¾");
   groupBtn.setAttribute("aria-haspopup", "true");
   groupBtn.setAttribute("aria-expanded", "false");
   const menu = elDiv("menu");
@@ -462,7 +526,7 @@ function renderSessionsSection(parent, state, handlers) {
     const item = elDiv("session-item");
     const nameEl = elSpan("session-name", session.name || "(unnamed)");
     nameEl.dir = "auto";
-    nameEl.title = `${session.name || ""} · ${(Array.isArray(session.tabs) ? session.tabs.length : 0)} tabs`;
+    nameEl.title = `${session.name || ""} Â· ${(Array.isArray(session.tabs) ? session.tabs.length : 0)} tabs`;
     item.appendChild(nameEl);
     const restoreBtn = elButton("btn btn--ghost btn--small", "Restore", "Open these tabs in background");
     restoreBtn.addEventListener("click", () => handlers.restoreSession(session.id));
@@ -529,7 +593,7 @@ function renderSettingsSection(parent, state, handlers) {
 
   const undoField = elDiv("field");
   const undoLabel = document.createElement("label");
-  undoLabel.textContent = "Undo seconds (2–60)";
+  undoLabel.textContent = "Undo seconds (2â€“60)";
   undoLabel.htmlFor = "undo-input";
   undoField.appendChild(undoLabel);
   const undoInput = document.createElement("input");
@@ -590,7 +654,7 @@ function renderSettingsSection(parent, state, handlers) {
 
   const perms = elDiv("perms-card");
   perms.appendChild(
-    elSpan(null, state.hostGranted ? "Site access enabled — page reading on." : "Page reading is off — summaries unavailable.")
+    elSpan(null, state.hostGranted ? "Site access enabled â€” page reading on." : "Page reading is off â€” summaries unavailable.")
   );
   const permBtn = state.hostGranted
     ? elButton("btn btn--danger btn--small", "Remove site access")
@@ -670,7 +734,7 @@ export function renderBanners(container, state, isDismissed, handlers) {
   if (Number(state.quotaPrunedAt) > 0 && !isDismissed("quota")) {
     const banner = elDiv("banner");
     const text = document.createElement("p");
-    text.textContent = "Storage full — oldest page texts dropped. Summaries kept.";
+    text.textContent = "Storage full â€” oldest page texts dropped. Summaries kept.";
     banner.appendChild(text);
     const dismiss = elButton("btn btn--ghost btn--small", "Dismiss");
     dismiss.addEventListener("click", () => handlers.dismissBanner("quota"));
@@ -680,7 +744,7 @@ export function renderBanners(container, state, isDismissed, handlers) {
   if (!state.hostGranted && !isDismissed("permission")) {
     const banner = elDiv("banner");
     const text = document.createElement("p");
-    text.textContent = "Page reading is off — summaries unavailable.";
+    text.textContent = "Page reading is off â€” summaries unavailable.";
     banner.appendChild(text);
     const enable = elButton("btn btn--primary btn--small", "Enable");
     enable.addEventListener("click", () => handlers.enableHost());
@@ -703,15 +767,15 @@ export function renderOnboarding(container, state, handlers) {
   const p1 = document.createElement("p");
   p1.dir = "auto";
   p1.textContent =
-    "The inventory, summaries and tags shown here are computed locally. Nothing leaves this machine — there are zero network requests, and favicons come from your browser's own cache.";
+    "The inventory, summaries and tags shown here are computed locally. Nothing leaves this machine â€” there are zero network requests, and favicons come from your browser's own cache.";
   card.appendChild(p1);
   const list = document.createElement("ul");
   for (const line of [
-    "Tabs — read tab titles and URLs",
-    "Tab groups — read group names",
-    "Storage — keep everything on this device",
-    "Alarms — run the undo timer",
-    "Scripting + optional site access — page reading, optional, off until enabled"
+    "Tabs â€” read tab titles and URLs",
+    "Tab groups â€” read group names",
+    "Storage â€” keep everything on this device",
+    "Alarms â€” run the undo timer",
+    "Scripting + optional site access â€” page reading, optional, off until enabled"
   ]) {
     const li = document.createElement("li");
     li.textContent = line;

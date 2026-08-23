@@ -24,13 +24,18 @@ export function syncFromTabs(existingMap, tabs, settings) {
   return { map, createdIds, removedIds };
 }
 
+const AUTO_RETRYABLE_FAILURE_REASONS = new Set(["injection-failed"]);
+
 export function eligibility(record, settings, hostGranted) {
   if (!record || record.kind !== URL_KIND.WEB) return false;
   if (!settings || !Array.isArray(settings.excludedDomains)) return false;
   if (settings.excludedDomains.includes(record.domain)) return false;
   if (!hostGranted) return false;
   if (record.discarded) return false;
-  if (record.extraction) return false;
+  if (record.extraction) {
+    if (record.extraction.status !== "failed") return false;
+    if (!AUTO_RETRYABLE_FAILURE_REASONS.has(record.extraction.reason)) return false;
+  }
   return true;
 }
 

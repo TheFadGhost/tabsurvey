@@ -266,6 +266,24 @@ export function stateGlyphs(record) {
   return out;
 }
 
+export function rowAriaLabel(record, opts = {}) {
+  const rec = record || {};
+  const parts = [];
+  parts.push(String(rec.title || rec.url || "Untitled").trim() || "Untitled");
+  parts.push(String(rec.domain || rec.kind || "").trim());
+  const labels = Array.isArray(rec.tags)
+    ? rec.tags.filter((t) => t && typeof t.label === "string" && t.label).map((t) => t.label)
+    : [];
+  if (labels.length > 0) parts.push(`tags ${labels.join(", ")}`);
+  if (rec.unreadable === true) parts.push("unreadable");
+  if (rec.audible) parts.push("audible");
+  if (rec.discarded) parts.push("discarded");
+  if (rec.duplicateOf != null) parts.push("duplicate");
+  if (rec.pinned) parts.push("pinned");
+  if (typeof opts.suffix === "string" && opts.suffix) parts.push(opts.suffix);
+  return parts.filter(Boolean).join(", ");
+}
+
 let liveRegion = null;
 let liveTimer = 0;
 

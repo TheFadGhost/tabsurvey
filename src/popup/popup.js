@@ -13,7 +13,8 @@ import {
   resolveTheme,
   applyResolvedTheme,
   watchSystemTheme,
-  hashDotIndex
+  hashDotIndex,
+  rowAriaLabel as sharedRowAriaLabel
 } from "../shared/uiCommon.js";
 
 const records = new Map();
@@ -76,13 +77,7 @@ function rowTitle(rec) {
 }
 
 function rowAriaLabel(rec) {
-  let label = `${rowTitle(rec)}, ${rec.domain || rec.kind || ""}`;
-  if (rec.audible) label += ", audible";
-  if (rec.discarded) label += ", discarded";
-  if (rec.duplicateOf != null) label += ", duplicate";
-  if (rec.pinned) label += ", pinned";
-  if (isUnreadable(rec)) label += ", unreadable";
-  return label;
+  return sharedRowAriaLabel({ ...rec, unreadable: isUnreadable(rec) });
 }
 
 function recordHaystack(rec) {
@@ -132,7 +127,7 @@ function topTagFilters(all) {
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, 4)
+    .slice(0, 5)
     .map(([label]) => label);
 }
 
@@ -155,6 +150,7 @@ function renderChips() {
     };
     const chip = el("button", props);
     if (id.startsWith("tag:")) {
+      chip.dir = "auto";
       const dot = el("span", { className: "chip__dot" });
       dot.style.background = `var(--dot-${hashDotIndex(label)})`;
       chip.appendChild(dot);
@@ -192,6 +188,28 @@ function buildRow(rec) {
   const statusWord = compactStatusWord(rec);
   if (statusWord) {
     row.appendChild(el("span", { className: "row__status" }, statusWord));
+  }
+
+  const tagList = Array.isArray(rec.tags) ? rec.tags.slice(0, 2) : [];
+  if (tagList.length > 0) {
+    const tagsWrap = el("span", { className: "row__tags" });
+    for (const tag of tagList) {
+      if (!tag || typeof tag.label !== "string") continue;
+      const chip = el("span", {
+        className: "chip",
+        dir: "auto",
+        title: typeof tag.reason === "string" ? tag.reason : tag.label
+      });
+      const dotIndex = hashDotIndex(tag.label);
+      const dot = el("span", { className: "chip__dot", ariaHidden: "true" });
+      dot.style.background = `var(--dot-${dotIndex})`;
+      chip.appendChild(dot);
+      chip.appendChild(el("span", { className: "chip__label" }, tag.label));
+      tagsWrap.appendChild(chip);
+    }
+    const overflow = (Array.isArray(rec.tags) ? rec.tags.length : 0) - tagList.length;
+    if (overflow > 0) tagsWrap.appendChild(el("span", { className: "chip" }, `+${overflow}`));
+    row.appendChild(tagsWrap);
   }
 
   const meta = el("span", { className: "row__meta" });
@@ -238,10 +256,12 @@ function renderEmpty(rows, total) {
     return;
   }
   if (query.trim()) {
+    note.dir = "auto";
     note.appendChild(el("span", {}, `No results for \u201c${query.trim()}\u201d.`));
     note.appendChild(resetButton());
     return;
   }
+  note.removeAttribute("dir");
   note.appendChild(el("span", {}, "No open tabs match."));
   note.appendChild(resetButton());
 }
@@ -278,7 +298,9 @@ function announceResults() {
 
 function updateEnableButton(total) {
   const hasWeb = allRecords().some((r) => r.kind === "web");
-  refs.enableReading.hidden = !(settings.hostPermissionAvailable !== true && !hostGranted && hasWeb && total > 0);
+  const showNotice = Boolean(hasWeb && total > 0 && settings.hostPermissionAvailable !== true && !hostGranted);
+  refs.enableReading.hidden = !showNotice;
+  if (refs.readingOffNote) refs.readingOffNote.hidden = !showNotice;
 }
 
 function renderStats() {
@@ -304,16 +326,20 @@ function renderAll() {
 }
 
 async function enableReading() {
+  let granted = false;
   try {
     if (
       typeof chrome !== "undefined" &&
       chrome.permissions &&
       typeof chrome.permissions.request === "function"
     ) {
-      await chrome.permissions.request({ origins: ["http://*/*", "https://*/*"] });
-      hostGranted = true;
+      granted = Boolean(await chrome.permissions.request({ origins: ["http://*/*", "https://*/*"] }));
     }
-  } catch {}
+  } catch {
+    granted = false;
+  }
+  if (!granted) return;
+  hostGranted = true;
   await message(MSG.SET_SETTINGS, { patch: { hostPermissionAvailable: true } }).catch(() => {});
   await message(MSG.REQUEST_EXTRACT_ALL).catch(() => {});
   updateEnableButton(records.size);
@@ -533,6 +559,7 @@ function boot() {
     footstats: document.getElementById("footstats"),
     count: document.getElementById("count"),
     enableReading: document.getElementById("enable-reading"),
+    readingOffNote: document.getElementById("reading-off-note"),
     openDash: document.getElementById("open-dash"),
     openSettings: document.getElementById("open-settings"),
     settingsPanel: document.getElementById("settings-panel"),

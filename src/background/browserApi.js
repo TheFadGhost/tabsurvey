@@ -117,6 +117,16 @@ export function createBrowserApi(chromeImpl) {
       return call(chromeImpl.permissions, "permissions", "request", { origins }).then(Boolean);
     },
 
+    permissionsOnRemoved(cb) {
+      if (!chromeImpl.permissions || !chromeImpl.permissions.onRemoved) return () => {};
+      return addListener(chromeImpl.permissions, "permissions", "onRemoved", cb);
+    },
+
+    runtimeOnSuspend(cb) {
+      if (!chromeImpl.runtime || !chromeImpl.runtime.onSuspend) return () => {};
+      return addListener(chromeImpl.runtime, "runtime", "onSuspend", cb);
+    },
+
     tabGroup(tabIds, groupId) {
       const info = groupId != null ? { tabIds, groupId } : { tabIds };
       return call(chromeImpl.tabs, "tabs", "group", info);

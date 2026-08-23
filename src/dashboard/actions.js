@@ -1,6 +1,11 @@
 import { MSG } from "../lib/schema.js";
 import { message } from "../shared/uiCommon.js";
-import { inventoryMarkdown } from "../lib/exporters.js";
+import { inventoryMarkdown, sessionsToJson } from "../lib/exporters.js";
+
+const toNumberIds = (tabIds) =>
+  (Array.isArray(tabIds) ? tabIds : [])
+    .map(Number)
+    .filter((n) => Number.isFinite(n));
 
 function pad2(value) {
   return String(value).padStart(2, "0");
@@ -27,7 +32,7 @@ export function downloadBlob(text, filename, mime) {
 
 export function createActions(ui) {
   async function closeWithUndo(tabIds) {
-    const ids = (Array.isArray(tabIds) ? tabIds : []).map(String);
+    const ids = toNumberIds(tabIds);
     if (ids.length === 0) return null;
     let res = null;
     try {
@@ -50,7 +55,7 @@ export function createActions(ui) {
   }
 
   async function discardSelected(tabIds) {
-    const ids = (Array.isArray(tabIds) ? tabIds : []).map(String);
+    const ids = toNumberIds(tabIds);
     if (ids.length === 0) return null;
     let res = null;
     try {
@@ -82,7 +87,7 @@ export function createActions(ui) {
     try {
       res = await message(MSG.SAVE_SESSION, {
         name: String(name || "Session").slice(0, 120),
-        tabIds: Array.isArray(tabIds) ? tabIds.map(String) : [],
+        tabIds: toNumberIds(tabIds),
         closeAfter: Boolean(closeAfter)
       });
     } catch {
@@ -113,7 +118,7 @@ export function createActions(ui) {
   function exportSessions(sessions) {
     const list = Array.isArray(sessions) ? sessions : [];
     downloadBlob(
-      JSON.stringify({ version: 1, sessions: list }, null, 2),
+      sessionsToJson(list),
       stampName("tabsurvey-sessions", "json"),
       "application/json;charset=utf-8"
     );

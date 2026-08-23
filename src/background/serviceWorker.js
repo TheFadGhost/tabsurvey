@@ -1,4 +1,4 @@
-﻿import { createBrowserApi } from "./browserApi.js";
+import { createBrowserApi } from "./browserApi.js";
 import { createController } from "./controller.js";
 
 const DASHBOARD_PATH = "src/dashboard/dashboard.html";

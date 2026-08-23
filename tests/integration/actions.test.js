@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { makeFakeChrome, makeManualTimers } from "../fakes/fakeChrome.js";
 import { createBrowserApi } from "../../src/background/browserApi.js";
