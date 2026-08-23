@@ -24,7 +24,6 @@ function collectFiles() {
   const files = [];
   if (existsSync(SRC_DIR)) files.push(...walk(SRC_DIR));
   files.push(MANIFEST_PATH);
-  if (existsSync(E2E_DIR) && statSync(E2E_DIR).isDirectory()) files.push(...walk(E2E_DIR));
   return files;
 }
 

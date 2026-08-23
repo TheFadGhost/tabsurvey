@@ -6,119 +6,26 @@ import { createController } from "../../src/background/controller.js";
 import { GROUP_COLORS } from "../../src/background/inventory.js";
 import { STORAGE_KEYS, MSG, LIMITS } from "../../src/lib/schema.js";
 
-let realTagger = null;
-try {
-  realTagger = await import("../../src/lib/tagger.js");
-} catch {
-  realTagger = null;
-}
-let realSummarizer = null;
-try {
-  realSummarizer = await import("../../src/lib/summarizer.js");
-} catch {
-  realSummarizer = null;
-}
 
-const LIB_MODE = { tagger: realTagger ? "real" : "stub" };
-console.log(`[actions] lib mode: ${JSON.stringify(LIB_MODE)}`);
-
-const STUB_RULES = [
-  { label: "Development", domains: ["github.com", "gitlab.com", "stackoverflow.com"] },
-  { label: "Video", domains: ["youtube.com", "vimeo.com", "netflix.com"] }
-];
-
-function normalizeStubCorrections(value) {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return {
-      added: Array.isArray(value.added) ? [...value.added] : [],
-      removed: Array.isArray(value.removed) ? [...value.removed] : []
-    };
+async function loadReal(mod) {
+  try {
+    return await import(`../../src/lib/${mod}`);
+  } catch {
+    return null;
   }
-  return { added: [], removed: [] };
 }
-
-function stubSummarize(doc, opts) {
-  const length = opts && opts.length ? opts.length : "medium";
-  const count = { short: 2, medium: 3, long: 4 }[length] || 3;
-  const sentences = String(doc.text || "")
-    .split(/(?<=[.!?])\s+/)
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .slice(0, count)
-    .map((t, i) => ({ text: t, score: 1 / (i + 1) }));
-  let abstract = sentences.map((s) => s.text).join(" ");
-  if (abstract.length > 320) abstract = abstract.slice(0, 320);
-  return { abstract, sentences, confidence: String(doc.text || "").length > 500 ? "high" : "low" };
-}
-
-function stubCategorize(record, ctx) {
-  const corr = normalizeStubCorrections(ctx && ctx.corrections);
-  const rules = ctx && Array.isArray(ctx.rules) && ctx.rules.length > 0 ? ctx.rules : STUB_RULES;
-  const tags = [];
-  for (const rule of rules) {
-    if (!rule || typeof rule.label !== "string") continue;
-    if (corr.removed.includes(rule.label)) continue;
-    if (record.domain && Array.isArray(rule.domains) && rule.domains.includes(record.domain)) {
-      tags.push({
-        id: `rule-${rule.label.toLowerCase()}`,
-        label: rule.label,
-        source: "rule",
-        reason: `domain:${record.domain}`
-      });
-    }
-  }
-  if (tags.length === 0 && !corr.removed.includes("Other")) {
-    tags.push({ id: "rule-other", label: "Other", source: "rule", reason: "fallback" });
-  }
-  for (const label of corr.added) {
-    tags.push({ id: `user-${label.toLowerCase()}`, label, source: "user", reason: "manual-correction" });
-  }
-  return tags;
-}
-
-function stubApplyCorrection(tags, correction, correctionsValue) {
-  const corr = normalizeStubCorrections(correctionsValue);
-  const label = correction && typeof correction.label === "string" ? correction.label : "";
-  if (!label) return { tags: [...tags], corrections: corr };
-  if (correction.op === "remove") {
-    if (!corr.removed.includes(label)) corr.removed.push(label);
-    corr.added = corr.added.filter((l) => l !== label);
-    return { tags: tags.filter((t) => !(t && t.label === label)), corrections: corr };
-  }
-  if (!corr.added.includes(label)) corr.added.push(label);
-  corr.removed = corr.removed.filter((l) => l !== label);
-  return {
-    tags: [
-      ...tags.filter((t) => !(t && t.label === label)),
-      { id: `user-${label.toLowerCase()}`, label, source: "user", reason: "manual-correction" }
-    ],
-    corrections: corr
-  };
-}
-
-function stubMarkDuplicates(records) {
-  let marked = 0;
-  const byUrl = new Map();
-  for (const record of records) {
-    const key = record.normalizedUrl || record.url;
-    if (byUrl.has(key)) {
-      record.duplicateOf = byUrl.get(key);
-      marked++;
-    } else {
-      byUrl.set(key, String(record.id));
-    }
-  }
-  return marked;
-}
-
+const realTagger = await loadReal("tagger.js");
+const realSummarizer = await loadReal("summarizer.js");
+const realDedupe = await loadReal("dedupe.js");
+if (!realTagger || !realSummarizer || !realDedupe) throw new Error("real libs must be present");
 function makeDeps(timers, overrides = {}) {
   return {
-    summarize: realSummarizer ? realSummarizer.summarize : stubSummarize,
-    categorize: realTagger ? realTagger.categorize : stubCategorize,
-    buildRules: realTagger ? realTagger.buildDefaultRules : () => STUB_RULES,
-    buildCorrections: realTagger ? realTagger.buildDefaultCorrections : () => ({ added: [], removed: [] }),
-    applyCorrection: realTagger && realTagger.applyCorrection ? realTagger.applyCorrection : stubApplyCorrection,
-    markDuplicates: stubMarkDuplicates,
+    summarize: realSummarizer.summarize,
+    categorize: realTagger.categorize,
+    buildRules: realTagger.buildDefaultRules,
+    buildCorrections: realTagger.buildDefaultCorrections,
+    applyCorrection: realTagger.applyCorrection,
+    markDuplicates: realDedupe.markDuplicates,
     timers,
     ...overrides
   };
@@ -282,12 +189,7 @@ test("5. duplicate close flow: alarm fires and removes only the duplicate", asyn
 test("6. CORRECT_TAGS remove round-trip persists and recategorization respects it", async () => {
   const fake = makeFakeChrome();
   const timers = makeManualTimers();
-  const deps = { ...makeDeps(timers) };
-  deps.categorize = stubCategorize;
-  deps.buildRules = () => STUB_RULES;
-  deps.buildCorrections = () => ({ added: [], removed: [] });
-  deps.applyCorrection = stubApplyCorrection;
-  const ctrl = createController(createBrowserApi(fake), deps);
+  const ctrl = createController(createBrowserApi(fake), makeDeps(timers));
   ctrl.registerAll();
   const ghId = fake.seed({ url: "https://github.com/x/y", title: "Repo" });
   fake.contentResponders[String(ghId)] = () => ({
@@ -312,22 +214,13 @@ test("6. CORRECT_TAGS remove round-trip persists and recategorization respects i
   state = await ctrl.handleMessage({ type: MSG.GET_STATE }, {});
   assert.ok(!state.tabs[String(ghId)].tags.some((t) => t.label === "Development"));
   const storedCorrections = fake.storage.local.data.get(STORAGE_KEYS.CORRECTIONS);
-  assert.ok(storedCorrections.removed.includes("Development"));
+  assert.ok(Number(storedCorrections.removed.Development) >= 1);
 
   const timers2 = makeManualTimers();
-  const deps2 = {
-    summarize: stubSummarize,
-    categorize: stubCategorize,
-    buildRules: () => STUB_RULES,
-    buildCorrections: () => ({ added: [], removed: [] }),
-    applyCorrection: stubApplyCorrection,
-    markDuplicates: stubMarkDuplicates,
-    timers: timers2
-  };
-  const ctrl2 = createController(createBrowserApi(fake), deps2);
+  const ctrl2 = createController(createBrowserApi(fake), makeDeps(timers2));
   ctrl2.registerAll();
   await ctrl2.handleMessage({ type: MSG.GET_STATE }, {});
-  assert.ok(ctrl2._internals.corrections.removed.includes("Development"));
+  assert.ok(Number(ctrl2._internals.corrections.removed.Development) >= 1);
 
   const excludeOn = await ctrl2.handleMessage(
     { type: MSG.SET_EXCLUDED_DOMAIN, domain: "github.com", enabled: true },
@@ -355,8 +248,7 @@ test("6. CORRECT_TAGS remove round-trip persists and recategorization respects i
   state2 = await ctrl2.handleMessage({ type: MSG.GET_STATE }, {});
   const labels = state2.tabs[String(ghId)].tags.map((t) => t.label);
   assert.ok(!labels.includes("Development"));
-  assert.deepEqual(structuredClone(fake.storage.local.data.get(STORAGE_KEYS.CORRECTIONS)), {
-    added: [],
-    removed: ["Development"]
-  });
+  const finalCorrections = structuredClone(fake.storage.local.data.get(STORAGE_KEYS.CORRECTIONS));
+  assert.ok(Number(finalCorrections.removed.Development) >= 1);
+  assert.deepEqual(finalCorrections.added, {});
 });

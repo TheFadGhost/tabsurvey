@@ -315,13 +315,23 @@ function boot() {
   });
 
   let rafPending = false;
+  let rafFallback = 0;
   store.subscribe(() => {
     if (rafPending) return;
     rafPending = true;
-    requestAnimationFrame(() => {
+    const run = () => {
+      if (!rafPending) return;
       rafPending = false;
+      if (rafFallback) {
+        clearTimeout(rafFallback);
+        rafFallback = 0;
+      }
       renderAll();
-    });
+    };
+    try {
+      requestAnimationFrame(run);
+    } catch {}
+    rafFallback = setTimeout(run, 60);
   });
 
   function renderEmptyNote(records, state) {

@@ -250,6 +250,8 @@ function keywordTags(tags, title, excerpt, corrections, tokenize) {
     .filter(
       ([token]) =>
         token.length >= 4 &&
+        /[^\d]/.test(token) &&
+        (token.match(/[\p{L}]{3,}/gu) !== null) &&
         !STOPWORDS.has(token) &&
         !existing.has(token) &&
         !removedLower.has(token)

@@ -11,6 +11,9 @@
   validateSessionsImport
 } from "../lib/schema.js";
 import { syncFromTabs, eligibility, pruneForQuota, groupBuckets, GROUP_COLORS } from "./inventory.js";
+import { summarize } from "../lib/summarizer.js";
+import { buildDefaultRules, buildDefaultCorrections, categorize, applyCorrection, mergeCorrections as mergeTaggerCorrections } from "../lib/tagger.js";
+import { markDuplicates } from "../lib/dedupe.js";
 
 const VERSION = "0.1.0";
 const PERSIST_DEBOUNCE_MS = 250;
@@ -18,79 +21,52 @@ const TAG_CAP = 12;
 const MAX_SESSIONS = 50;
 const HOST_ORIGINS = ["http", "https"].map((scheme) => `${scheme}://*/*`);
 
-const moduleCache = new Map();
-function loadModule(specifier) {
-  if (!moduleCache.has(specifier)) {
-    moduleCache.set(
-      specifier,
-      import(specifier).catch(() => null)
-    );
-  }
-  return moduleCache.get(specifier);
+function emptyCorrections() {
+  return { removed: {}, added: {} };
 }
 
-async function defaultSummarize(doc, opts) {
-  const m = await loadModule("../lib/summarizer.js");
-  return m ? m.summarize(doc, opts) : null;
+function defaultSummarize(doc, opts) {
+  return summarize(doc, opts);
 }
-async function defaultCategorize(record, ctx) {
-  const m = await loadModule("../lib/tagger.js");
-  return m ? m.categorize(record, ctx) : [];
+function defaultCategorize(record, ctx) {
+  return categorize(record, ctx);
 }
-async function defaultBuildRules() {
-  const m = await loadModule("../lib/tagger.js");
-  return m ? m.buildDefaultRules() : [];
+function defaultBuildRules() {
+  return buildDefaultRules();
 }
-async function defaultBuildCorrections() {
-  const m = await loadModule("../lib/tagger.js");
-  return m ? m.buildDefaultCorrections() : [];
+function defaultBuildCorrections() {
+  return buildDefaultCorrections();
 }
-async function defaultMarkDuplicates(records) {
-  const m = await loadModule("../lib/dedupe.js");
-  return m ? m.markDuplicates(records) : 0;
+function defaultMarkDuplicates(records) {
+  return markDuplicates(records) || 0;
 }
 
 function normalizeCorrectionsShape(value) {
-  if (Array.isArray(value)) {
-    const out = { added: [], removed: [] };
-    for (const item of value) {
-      if (!item || typeof item !== "object") continue;
-      const label = typeof item.label === "string" ? item.label : "";
-      if (!label) continue;
-      if (item.op === "remove") {
-        if (!out.removed.includes(label)) out.removed.push(label);
-      } else if (item.op === "add") {
-        if (!out.added.includes(label)) out.added.push(label);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return emptyCorrections();
+  const map = (v) => {
+    const out = {};
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      for (const [k, n] of Object.entries(v)) {
+        if (typeof k === "string" && k && Number.isFinite(Number(n))) out[k] = Number(n);
       }
     }
     return out;
-  }
-  if (value && typeof value === "object") {
-    return {
-      added: Array.isArray(value.added) ? [...value.added] : [],
-      removed: Array.isArray(value.removed) ? [...value.removed] : []
-    };
-  }
-  return { added: [], removed: [] };
+  };
+  return { removed: map(value.removed), added: map(value.added) };
 }
 
 function mergeCorrections(defaults, stored) {
-  if (stored === undefined || stored === null) {
-    return defaults && typeof defaults === "object" ? defaults : { added: [], removed: [] };
-  }
-  if (Array.isArray(defaults) && Array.isArray(stored)) {
-    const seen = new Set(defaults.map((x) => JSON.stringify(x)));
-    return [...defaults, ...stored.filter((x) => !seen.has(JSON.stringify(x)))];
-  }
-  if (defaults && typeof defaults === "object" && stored && typeof stored === "object" && !Array.isArray(stored)) {
-    const out = { ...defaults };
-    for (const [key, sv] of Object.entries(stored)) {
-      const dv = out[key];
-      out[key] = Array.isArray(dv) && Array.isArray(sv) ? [...new Set([...dv, ...sv])] : sv;
+  const base = normalizeCorrectionsShape(defaults);
+  const extra = normalizeCorrectionsShape(stored);
+  const out = emptyCorrections();
+  for (const key of ["removed", "added"]) {
+    const merged = { ...base[key] };
+    for (const [label, n] of Object.entries(extra[key])) {
+      merged[label] = (Number(merged[label]) || 0) + Number(n);
     }
-    return out;
+    out[key] = merged;
   }
-  return stored;
+  return out;
 }
 
 function fallbackApplyCorrection(tags, correction, correctionsValue) {
@@ -99,12 +75,12 @@ function fallbackApplyCorrection(tags, correction, correctionsValue) {
   if (!label) return { tags: [...tags], corrections: corr };
   const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "tag";
   if (correction.op === "remove") {
-    if (!corr.removed.includes(label)) corr.removed.push(label);
-    corr.added = corr.added.filter((l) => l !== label);
+    corr.removed[label] = (Number(corr.removed[label]) || 0) + 1;
+    delete corr.added[label];
     return { tags: tags.filter((t) => !(t && t.label === label)), corrections: corr };
   }
-  if (!corr.added.includes(label)) corr.added.push(label);
-  corr.removed = corr.removed.filter((l) => l !== label);
+  corr.added[label] = (Number(corr.added[label]) || 0) + 1;
+  delete corr.removed[label];
   return {
     tags: [
       ...tags.filter((t) => !(t && t.label === label)),
@@ -114,10 +90,12 @@ function fallbackApplyCorrection(tags, correction, correctionsValue) {
   };
 }
 
-async function defaultApplyCorrection(tags, correction, correctionsValue) {
-  const m = await loadModule("../lib/tagger.js");
-  if (m && typeof m.applyCorrection === "function") return m.applyCorrection(tags, correction, correctionsValue);
-  return fallbackApplyCorrection(tags, correction, correctionsValue);
+function defaultApplyCorrection(tags, correction, correctionsValue) {
+  try {
+    return applyCorrection(tags, correction, correctionsValue);
+  } catch {
+    return fallbackApplyCorrection(tags, correction, correctionsValue);
+  }
 }
 
 function mapErrorToReason(err) {
@@ -155,7 +133,7 @@ export function createController(api, deps = {}) {
   let tabsMap = {};
   let settings = mergeSettings(undefined);
   let sessions = [];
-  let corrections = { added: [], removed: [] };
+  let corrections = emptyCorrections();
   let pendingClose = {};
   let cachedRules = [];
   let hostGranted = false;
@@ -169,8 +147,10 @@ export function createController(api, deps = {}) {
   let persistTimer = null;
   let queue = [];
   const extracting = new Set();
+  const extractAttempts = new Map();
+  const EXTRACT_MAX_ATTEMPTS = 4;
   let activeWorkers = 0;
-  const counters = { hydrations: 0, extractionsAttempted: 0, extractionsOk: 0 };
+  const counters = { hydrations: 0, extractionsAttempted: 0, extractionsOk: 0, lastExtractError: "", lastSummarySkip: "" };
 
   const nextSeq = () => ++seq;
   const pendingClosePrefix = `${STORAGE_KEYS.PENDING_CLOSE}:`;
@@ -310,11 +290,11 @@ export function createController(api, deps = {}) {
     } catch {
       cachedRules = [];
     }
-    let defaultsCorrections = { added: [], removed: [] };
+    let defaultsCorrections = emptyCorrections();
     try {
-      defaultsCorrections = (await buildCorrectionsFn()) || { added: [], removed: [] };
+      defaultsCorrections = normalizeCorrectionsShape((await buildCorrectionsFn()) || null);
     } catch {
-      defaultsCorrections = { added: [], removed: [] };
+      defaultsCorrections = emptyCorrections();
     }
     corrections = mergeCorrections(defaultsCorrections, data[STORAGE_KEYS.CORRECTIONS]);
     pendingClose =
@@ -326,10 +306,19 @@ export function createController(api, deps = {}) {
 
   function ensureHydrated() {
     if (!hydratePromise) {
-      hydratePromise = doHydrate().catch((e) => {
-        hydratePromise = null;
-        throw e;
-      });
+      hydratePromise = doHydrate()
+        .then(async (value) => {
+          try {
+            const tabs = await api.getTabs({});
+            const result = syncFromTabs(tabsMap, tabs, settings);
+            tabsMap = result.map;
+          } catch {}
+          return value;
+        })
+        .catch((e) => {
+          hydratePromise = null;
+          throw e;
+        });
     }
     return hydratePromise;
   }
@@ -413,7 +402,9 @@ export function createController(api, deps = {}) {
           { title: record.title || "", headings: record.extraction.headings || [], text: rawText },
           { length: settings.summaryLength || "medium" }
         );
-      } catch {
+        if (!sum) counters.lastSummarySkip = "summarizer-returned-null";
+      } catch (e) {
+        counters.lastSummarySkip = String(e && e.message).slice(0, 200);
         sum = null;
       }
       record.summary =
@@ -451,6 +442,20 @@ export function createController(api, deps = {}) {
     const record = tabsMap[key];
     try {
       if (!record) return;
+      const live = await api.getTab(record.id).catch(() => null);
+      if (!live) return;
+      extractAttempts.set(key, (extractAttempts.get(key) || 0) + 1);
+      if (live.status === "loading") {
+        record.extraction = null;
+        record.summary = null;
+        if (extractAttempts.get(key) < EXTRACT_MAX_ATTEMPTS) {
+          scheduleExtractRetry(record.id, extractAttempts.get(key));
+        } else {
+          extractAttempts.set(key, 0);
+          record.extraction = { status: "failed", reason: FAILURE_REASONS.TIMEOUT };
+        }
+        return;
+      }
       await api.executeScript(record.id, ["src/content/extractor.js"]);
       const response = await withTimeout(
         api.sendMessageToTab(record.id, { type: "EXTRACT_NOW" }),
@@ -461,9 +466,24 @@ export function createController(api, deps = {}) {
           ? response.payload
           : response;
       await ingestExtractionPayload(record, payload);
+      extractAttempts.set(key, 0);
     } catch (err) {
+      counters.lastExtractError = String(err && err.message).slice(0, 200);
       if (record) {
-        record.extraction = { status: "failed", reason: mapErrorToReason(err) };
+        const attempts = Math.max(1, extractAttempts.get(key) || 1);
+        const transient =
+          attempts < EXTRACT_MAX_ATTEMPTS &&
+          /Cannot access|Receiving end does not exist|Frame with ID|No tab with id|cannot be scripted|document not ready|loading/i.test(
+            String(err && err.message)
+          );
+        if (transient) {
+          record.extraction = null;
+          record.summary = null;
+          scheduleExtractRetry(record.id, attempts);
+        } else {
+          extractAttempts.set(key, 0);
+          record.extraction = { status: "failed", reason: mapErrorToReason(err) };
+        }
       }
     } finally {
       extracting.delete(key);
@@ -474,22 +494,57 @@ export function createController(api, deps = {}) {
     }
   }
 
+  function scheduleExtractRetry(id, attempts) {
+    timers.setTimeout(
+      () => {
+        const rec = tabsMap[String(id)];
+        if (!rec || extracting.has(String(id))) return;
+        if (!eligibility(rec, settings, hostGranted)) return;
+        queue.push(id);
+        pump();
+      },
+      Math.min(8000, 1200 * attempts)
+    );
+  }
+
+  function maybeEnqueueRecord(record) {
+    if (!record || record.id == null) return;
+    const key = String(record.id);
+    if (queue.some((q) => String(q) === key) || extracting.has(key)) return;
+    if (!eligibility(record, settings, hostGranted)) return;
+    queue.push(record.id);
+    pump();
+  }
+
   function onTabCreated(tab) {
     if (!tab || tab.id == null) return;
     const key = String(tab.id);
     if (tabsMap[key]) applyTabDelta(tabsMap[key], tab);
     else tabsMap[key] = createTabRecord(tab);
+    maybeEnqueueRecord(tabsMap[key]);
     schedulePersist();
   }
 
   function onTabUpdated(tabId, changeInfo, tab) {
     const key = String(tabId);
+    const record = tabsMap[key];
+    const prevUrl = record ? record.url : null;
     const source =
       tab && typeof tab === "object" && Object.keys(tab).length > 0
         ? { ...tab, id: tabId }
         : { id: tabId, ...(changeInfo || {}) };
     if (tabsMap[key]) applyTabDelta(tabsMap[key], source);
     else tabsMap[key] = createTabRecord(source);
+    const nextRecord = tabsMap[key];
+    const urlChanged = prevUrl != null && nextRecord.url !== prevUrl;
+    const navigated = urlChanged || changeInfo?.status === "complete";
+    if (urlChanged) {
+      nextRecord.extraction = null;
+      nextRecord.summary = null;
+      nextRecord.tags = [];
+      extractAttempts.delete(key);
+    }
+    if (navigated) maybeEnqueueRecord(nextRecord);
     schedulePersist();
   }
 
@@ -870,8 +925,14 @@ export function createController(api, deps = {}) {
       if (typeof message.type !== "string") return { ok: false, error: "unknown-message" };
       await ensureHydrated();
       switch (message.type) {
-        case MSG.GET_STATE:
+        case MSG.GET_STATE: {
+          if (queue.length === 0 && extracting.size === 0) {
+            Promise.resolve()
+              .then(() => enqueueEligible("get-state"))
+              .catch(() => {});
+          }
           return getStateMessage();
+        }
         case MSG.REFRESH_INVENTORY:
           return await refreshInventory();
         case MSG.REQUEST_EXTRACT_ALL: {
@@ -919,7 +980,8 @@ export function createController(api, deps = {}) {
       debug: {
         hydrations: counters.hydrations,
         extractionsAttempted: counters.extractionsAttempted,
-        extractionsOk: counters.extractionsOk
+        extractionsOk: counters.extractionsOk,
+        lastSummarySkip: counters.lastSummarySkip || ""
       },
       lastAlarmError,
       lastPersistError,
