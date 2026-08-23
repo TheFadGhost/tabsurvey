@@ -391,6 +391,59 @@ export function createController(api, deps = {}) {
     }
   }
 
+  async function ingestExtractionPayload(record, payload) {
+    const validated = validateExtractionPayload(payload);
+    let okStatus = false;
+    let rawText = "";
+    if (validated.ok) {
+      const ex = validated.value;
+      rawText = typeof ex.text === "string" ? ex.text : "";
+      delete ex.text;
+      record.extraction = ex;
+      okStatus = ex.status === "ok";
+    } else {
+      const reasonMap = { "empty-text": FAILURE_REASONS.TOO_LITTLE };
+      record.extraction = { status: "failed", reason: reasonMap[validated.error] || FAILURE_REASONS.UNKNOWN };
+    }
+    if (okStatus) {
+      counters.extractionsOk++;
+      let sum = null;
+      try {
+        sum = await summarizeFn(
+          { title: record.title || "", headings: record.extraction.headings || [], text: rawText },
+          { length: settings.summaryLength || "medium" }
+        );
+      } catch {
+        sum = null;
+      }
+      record.summary =
+        sum && typeof sum.abstract === "string"
+          ? {
+              abstract: sum.abstract,
+              sentences: Array.isArray(sum.sentences)
+                ? sum.sentences.map((s) => (typeof s === "string" ? s : s && s.text)).filter((t) => typeof t === "string")
+                : [],
+              confidence: sum.confidence === "high" ? "high" : "low",
+              generatedAt: now()
+            }
+          : null;
+    }
+    try {
+      const tags = await categorizeFn(
+        {
+          title: record.title || "",
+          domain: record.domain || "",
+          url: record.url || "",
+          extraction: record.extraction && record.extraction.excerpt ? { excerpt: record.extraction.excerpt } : null
+        },
+        { rules: cachedRules || [], corrections }
+      );
+      record.tags = [...(Array.isArray(tags) ? tags : [])].slice(0, TAG_CAP);
+    } catch {
+      record.tags = [];
+    }
+  }
+
   async function runWorker(id) {
     const key = String(id);
     extracting.add(key);
@@ -399,60 +452,15 @@ export function createController(api, deps = {}) {
     try {
       if (!record) return;
       await api.executeScript(record.id, ["src/content/extractor.js"]);
-      const payload = await withTimeout(
+      const response = await withTimeout(
         api.sendMessageToTab(record.id, { type: "EXTRACT_NOW" }),
         LIMITS.EXTRACT_TIMEOUT_MS
       );
-      const validated = validateExtractionPayload(payload);
-      let okStatus = false;
-      let rawText = "";
-      if (validated.ok) {
-        const ex = validated.value;
-        rawText = typeof ex.text === "string" ? ex.text : "";
-        delete ex.text;
-        record.extraction = ex;
-        okStatus = ex.status === "ok";
-      } else {
-        const reasonMap = { "empty-text": FAILURE_REASONS.TOO_LITTLE };
-        record.extraction = { status: "failed", reason: reasonMap[validated.error] || FAILURE_REASONS.UNKNOWN };
-      }
-      if (okStatus) {
-        counters.extractionsOk++;
-        let sum = null;
-        try {
-          sum = await summarizeFn(
-            { title: record.title || "", headings: record.extraction.headings || [], text: rawText },
-            { length: settings.summaryLength || "medium" }
-          );
-        } catch {
-          sum = null;
-        }
-        record.summary =
-          sum && typeof sum.abstract === "string"
-            ? {
-                abstract: sum.abstract,
-                sentences: Array.isArray(sum.sentences)
-                  ? sum.sentences.map((s) => (typeof s === "string" ? s : s && s.text)).filter((t) => typeof t === "string")
-                  : [],
-                confidence: sum.confidence === "high" ? "high" : "low",
-                generatedAt: now()
-              }
-            : null;
-      }
-      try {
-        const tags = await categorizeFn(
-          {
-            title: record.title || "",
-            domain: record.domain || "",
-            url: record.url || "",
-            extraction: record.extraction && record.extraction.excerpt ? { excerpt: record.extraction.excerpt } : null
-          },
-          { rules: cachedRules || [], corrections }
-        );
-        record.tags = [...(Array.isArray(tags) ? tags : [])].slice(0, TAG_CAP);
-      } catch {
-        record.tags = [];
-      }
+      const payload =
+        response && typeof response === "object" && !Array.isArray(response) && "payload" in response
+          ? response.payload
+          : response;
+      await ingestExtractionPayload(record, payload);
     } catch (err) {
       if (record) {
         record.extraction = { status: "failed", reason: mapErrorToReason(err) };
@@ -845,9 +853,21 @@ export function createController(api, deps = {}) {
   }
 
   async function handleMessage(message, sender) {
-    void sender;
     try {
       if (!message || typeof message.type !== "string") return { ok: false, error: "unknown-message" };
+      if (message.type === "TABSURVEY_EXTRACTION") {
+        const tabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+        if (tabId == null || !message.payload) return { ok: false, error: "no-tab" };
+        await ensureHydrated();
+        const record = tabsMap[String(tabId)];
+        if (!record || extracting.has(String(tabId))) return { ok: true, ignored: true };
+        try {
+          await ingestExtractionPayload(record, message.payload);
+        } catch {}
+        schedulePersist();
+        return { ok: true };
+      }
+      if (typeof message.type !== "string") return { ok: false, error: "unknown-message" };
       await ensureHydrated();
       switch (message.type) {
         case MSG.GET_STATE:

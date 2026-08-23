@@ -295,14 +295,25 @@
     globalThis.TabsurveyExtractor = api;
   }
   if (typeof document !== "undefined" && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
-    let result;
+    const runOnce = () => {
+      try {
+        return extractFromDom(document);
+      } catch (error) {
+        return { status: "failed", reason: "unknown" };
+      }
+    };
     try {
-      result = extractFromDom(document);
-    } catch (error) {
-      result = { status: "failed", reason: "unknown" };
-    }
+      chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (!message || message.type !== "EXTRACT_NOW") return undefined;
+        Promise.resolve().then(runOnce).then(
+          (result) => { try { sendResponse({ type: "TABSURVEY_EXTRACTION", payload: result }); } catch (e) {} },
+          () => { try { sendResponse({ type: "TABSURVEY_EXTRACTION", payload: { status: "failed", reason: "unknown" } }); } catch (e) {} }
+        );
+        return true;
+      });
+    } catch (error) {}
     try {
-      chrome.runtime.sendMessage({ type: "TABSURVEY_EXTRACTION", payload: result });
+      chrome.runtime.sendMessage({ type: "TABSURVEY_EXTRACTION", payload: runOnce() });
     } catch (error) {}
   }
 })();
