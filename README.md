@@ -1,5 +1,12 @@
 # Tabsurvey
 
+> **built with ox alpha**
+>
+> most of this was written in august 2026 during the free preview window of
+> [ox alpha](https://openrouter.ai/stealth/ox-alpha), an anonymous stealth model
+> that turned up on openrouter for about a week. i set the direction and reviewed
+> what came back. the tests are real and they pass — clone it and run them.
+
 Tabsurvey is a Manifest V3 browser extension for people who keep sixty tabs open and need to see what they actually have: it inventories every open tab, extracts the main page content, produces a short summary, assigns editable tags, and finds duplicates — entirely on your device.
 
 **Everything runs locally. The extension makes zero network requests — no APIs, no analytics, no telemetry, no CDN assets, ever.** Summaries are computed by a deterministic extractive algorithm inside the extension; tags come from inspectable rules you can correct; favicons come from your browser's own cache. A regression test scans the source to enforce this, and the dashboard verifies at runtime that it loads no non-local resources.
